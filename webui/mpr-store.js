@@ -117,6 +117,21 @@ const model = {
     return this.slotLabels[slot] || slot;
   },
 
+  // The native preset editor and the chat model selector keep their own in-memory copy of the presets
+  // and only reload it when they save themselves. Refresh it whenever this plugin changes presets, or
+  // the editor shows the old list (and opens on Default) the first time it is opened afterwards.
+  async syncNative() {
+    try {
+      await modelConfigStore.loadGlobalPresets();
+      modelConfigStore.switcherPresets = modelConfigStore.globalPresets.filter((p) => p.name);
+      const chat = globalThis.Alpine?.store("chats")?.selected;
+      if (chat) await modelConfigStore.refreshSwitcher(chat);
+      if (modelConfigStore._modelsSummaryLoaded) await modelConfigStore.refreshModelsSummary(chat || "");
+    } catch (error) {
+      console.error("Could not refresh the native preset store:", error);
+    }
+  },
+
   // ---------- Copy settings ----------
 
   copyTargets() {
@@ -187,6 +202,7 @@ const model = {
   async editSource() {
     if (!this.copy.source) return;
     try {
+      await this.syncNative(); // presets may have changed elsewhere since the native store loaded them
       await modelConfigStore.openPresetEditor(this.copy.source);
     } catch (error) {
       toastError(message(error, "Could not open the preset editor."));
@@ -282,6 +298,7 @@ const model = {
         }
       }
       await this.load();
+      await this.syncNative();
       this.loadBackups(true);
     } catch (error) {
       toastError(message(error, "Could not copy the settings."));
@@ -319,6 +336,7 @@ const model = {
       const openAfter = this.dup.openAfter;
       this.dup.name = "";
       await this.load();
+      await this.syncNative(); // the native editor must know the new preset before it opens on it
       this.loadBackups(true);
       if (openAfter) {
         await modelConfigStore.openPresetEditor(result.name);
@@ -433,6 +451,7 @@ const model = {
       this.history.busy = false;
       await this.loadBackups(true);
       await this.load();
+      await this.syncNative();
     }
   },
 

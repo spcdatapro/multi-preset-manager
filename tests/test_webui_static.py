@@ -55,6 +55,18 @@ def test_strings_built_as_html_escape_everything_dynamic():
             assert safe, f"{name}: unescaped ${{{placeholder}}}"
 
 
+def test_every_action_that_changes_presets_refreshes_the_native_store():
+    """The native editor keeps its own copy of the presets and only reloads it when it saves itself,
+    so it shows the old list until this plugin refreshes it (see syncNative)."""
+    for name in ("duplicate", "applyCopy", "undo", "editSource"):
+        body = STORE[STORE.index(f"  async {name}("):]
+        body = body[: body.index("\n  },")]
+        assert "this.syncNative()" in body, f"{name} must call syncNative()"
+    duplicate = STORE[STORE.index("  async duplicate("):]
+    duplicate = duplicate[: duplicate.index("\n  },")]
+    assert duplicate.index("this.syncNative()") < duplicate.index("openPresetEditor"), "sync before opening the editor"
+
+
 def test_the_menu_entry_opens_this_plugins_modal():
     text = ENTRY.read_text(encoding="utf-8")
     assert "/plugins/multi_preset_manager/webui/main.html" in text
