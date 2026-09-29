@@ -1,0 +1,316 @@
+<html>
+<head>
+  <title>Multi-Preset Manager</title>
+  <script type="module" src="/plugins/multi_preset_manager/webui/mpr-store.js"></script>
+</head>
+<body>
+  <div x-data>
+    <template x-if="$store.multiPresetManager">
+      <div x-data="{ get m() { return $store.multiPresetManager; } }"
+        x-init="m.onOpen()" x-destroy="m.cleanup()">
+
+        <div class="mpr-tabs" role="group" aria-label="Multi-Preset Manager sections">
+          <button type="button" class="button" :class="{ confirm: m.tab === 'copy' }"
+            :aria-pressed="m.tab === 'copy'" @click="m.setTab('copy')">
+            <x-icon name="sync_alt"></x-icon> <span>Copy settings</span>
+          </button>
+          <button type="button" class="button" :class="{ confirm: m.tab === 'duplicate' }"
+            :aria-pressed="m.tab === 'duplicate'" @click="m.setTab('duplicate')">
+            <x-icon name="content_copy"></x-icon> <span>Duplicate</span>
+          </button>
+          <button type="button" class="button" :class="{ confirm: m.tab === 'history' }"
+            :aria-pressed="m.tab === 'history'" @click="m.setTab('history')">
+            <x-icon name="history"></x-icon> <span>History</span>
+          </button>
+        </div>
+
+        <!-- Copy settings -->
+        <div class="mpr-panel" x-show="m.tab === 'copy'">
+          <p class="mpr-muted" x-show="m.loading">Loading presets…</p>
+          <p class="mpr-muted" x-show="!m.loading &amp;&amp; m.presets.length &lt; 2">
+            You need at least two presets to copy settings.
+          </p>
+
+          <div x-show="!m.loading &amp;&amp; m.presets.length >= 2">
+            <div class="mpr-field">
+              <label class="mpr-label" for="mpr-copy-source">Source preset</label>
+              <div class="mpr-row-inline">
+                <select id="mpr-copy-source" class="mpr-input" x-model="m.copy.source" @change="m.onSourceChanged()">
+                  <template x-for="p in m.presets" :key="p.name">
+                    <option :value="p.name" :selected="p.name === m.copy.source" x-text="p.name"></option>
+                  </template>
+                </select>
+                <button type="button" class="button" :disabled="m.copy.busy" @click="m.editSource()">
+                  <x-icon name="edit"></x-icon> <span>Edit in native editor</span>
+                </button>
+              </div>
+              <span class="mpr-hint">
+                Change the source in the native preset editor if needed, close it, then choose what to copy.
+              </span>
+            </div>
+
+            <div class="mpr-field">
+              <span class="mpr-label">What to copy</span>
+              <template x-for="block in m.slotBlocks" :key="block.slot">
+                <div class="mpr-card">
+                  <div class="mpr-card-head">
+                    <label class="mpr-check mpr-check-tight">
+                      <input type="checkbox" :checked="m.slotAll(block)" @change="m.setSlot(block, $event.target.checked)">
+                      <span class="mpr-label mpr-label-inline" x-text="block.label"></span>
+                    </label>
+                  </div>
+                  <template x-for="g in block.groups" :key="g.id">
+                    <label class="mpr-check mpr-check-tight">
+                      <input type="checkbox" x-model="m.copy.groups[g.id]" @change="m.invalidate()">
+                      <span>
+                        <span x-text="g.label"></span>
+                        <span class="mpr-hint" x-show="m.groupHint(g)" x-text="m.groupHint(g)"></span>
+                      </span>
+                    </label>
+                  </template>
+                </div>
+              </template>
+
+              <div class="mpr-card" x-show="m.hasKwargsGroup()">
+                <span class="mpr-label">Additional parameters</span>
+                <div class="mpr-modes">
+                  <label class="mpr-check mpr-check-tight">
+                    <input type="radio" name="mpr-kwargs-mode" value="merge" x-model="m.copy.kwargsMode" @change="m.invalidate()">
+                    <span>Merge <span class="mpr-hint">keeps parameters that only exist in the targets</span></span>
+                  </label>
+                  <label class="mpr-check mpr-check-tight">
+                    <input type="radio" name="mpr-kwargs-mode" value="replace" x-model="m.copy.kwargsMode" @change="m.invalidate()">
+                    <span>Replace <span class="mpr-hint">targets get exactly the parameters of the source</span></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <div class="mpr-card">
+              <div class="mpr-card-head">
+                <span class="mpr-label mpr-label-inline">
+                  Target presets
+                  <span class="mpr-muted" x-text="'(' + m.selectedTargets().length + ' selected)'"></span>
+                </span>
+                <span class="mpr-links">
+                  <button type="button" class="mpr-link" @click="m.setAllTargets(true)">Select all</button>
+                  <button type="button" class="mpr-link" @click="m.setAllTargets(false)">Select none</button>
+                </span>
+              </div>
+              <template x-for="p in m.copyTargets()" :key="p.name">
+                <label class="mpr-check mpr-check-tight">
+                  <input type="checkbox" x-model="m.copy.targets[p.name]" @change="m.invalidate()">
+                  <span>
+                    <span x-text="p.name"></span>
+                    <span class="mpr-badge" x-show="p.is_default">Default</span>
+                    <span class="mpr-hint" x-text="p.main"></span>
+                    <span class="mpr-hint mpr-hint-warn" x-show="p.is_default">
+                      Presets that inherit from Default change too. "Select all" leaves it out.
+                    </span>
+                  </span>
+                </label>
+              </template>
+            </div>
+
+            <div class="mpr-actions">
+              <button type="button" class="button" :disabled="!m.canPreview()" @click="m.previewCopy()">
+                <x-icon name="visibility"></x-icon>
+                <span x-text="m.copy.previewing ? 'Checking…' : 'Preview changes'"></span>
+              </button>
+            </div>
+
+            <template x-if="m.copy.preview">
+              <div class="mpr-card mpr-preview">
+                <span class="mpr-label">Changes</span>
+                <p class="mpr-muted" x-show="m.copy.preview.changes.length === 0">
+                  Nothing would change: the targets already match the source for these settings.
+                </p>
+                <template x-for="item in m.copy.preview.changes" :key="item.preset">
+                  <div class="mpr-block">
+                    <div class="mpr-card-head">
+                      <strong x-text="item.preset"></strong>
+                      <span class="mpr-badge" x-show="!item.is_target">inherits the change</span>
+                    </div>
+                    <template x-for="part in m.changesBySlot(item)" :key="part.slot">
+                      <div>
+                        <div class="mpr-muted mpr-slot" x-text="part.label"></div>
+                        <template x-for="row in part.rows" :key="row.field">
+                          <div class="mpr-diff">
+                            <code x-text="row.field"></code>
+                            <span class="mpr-val" x-text="m.fmt(row.before)"></span>
+                            <span class="mpr-muted">→</span>
+                            <span class="mpr-val mpr-val-new" x-text="m.fmt(row.after)"></span>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+
+                <p class="mpr-hint" x-show="m.copy.preview.unchanged.length > 0"
+                  x-text="'Already matching: ' + m.copy.preview.unchanged.join(', ')"></p>
+                <p class="mpr-hint mpr-hint-warn" x-show="m.copy.preview.warnings.default_target">
+                  Default is a target: every preset that inherits from it changes too.
+                </p>
+                <p class="mpr-hint mpr-hint-warn" x-show="m.copy.preview.warnings.provider_changed.length > 0"
+                  x-text="'The provider changes in: ' + m.copy.preview.warnings.provider_changed.join(', ') + '. API base and extra parameters of the old provider are cleared unless you copy them.'"></p>
+                <p class="mpr-hint mpr-hint-warn" x-show="m.copy.preview.warnings.reindex_embedding.length > 0"
+                  x-text="'The embedding model changes in: ' + m.copy.preview.warnings.reindex_embedding.join(', ') + '. The memory is re-indexed the next time it is used, which can take a while.'"></p>
+                <p class="mpr-hint">Secret-looking values (keys, tokens, credentials in URLs) are shown as ***. They are copied on the server.</p>
+
+                <div class="mpr-actions">
+                  <button type="button" class="button confirm"
+                    :disabled="m.copy.busy || m.copy.preview.changes.length === 0" @click="m.applyCopy()">
+                    <x-icon name="sync_alt"></x-icon>
+                    <span x-text="m.copy.busy ? 'Copying…' : 'Copy settings…'"></span>
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <p class="mpr-hint">
+              Close the native preset editor before copying: saving it afterwards would overwrite the copied settings.
+            </p>
+          </div>
+        </div>
+
+        <!-- Duplicate -->
+        <div class="mpr-panel" x-show="m.tab === 'duplicate'">
+          <p class="mpr-muted" x-show="m.loading">Loading presets…</p>
+          <p class="mpr-muted" x-show="!m.loading &amp;&amp; m.presets.length === 0">There are no presets to duplicate.</p>
+
+          <div x-show="!m.loading &amp;&amp; m.presets.length > 0">
+            <div class="mpr-field">
+              <label class="mpr-label" for="mpr-dup-source">Preset to duplicate</label>
+              <select id="mpr-dup-source" class="mpr-input" x-model="m.dup.source">
+                <template x-for="p in m.presets" :key="p.name">
+                  <option :value="p.name" :selected="p.name === m.dup.source" x-text="p.name"></option>
+                </template>
+              </select>
+            </div>
+
+            <div class="mpr-field">
+              <label class="mpr-label" for="mpr-dup-name">Name of the new preset</label>
+              <input id="mpr-dup-name" class="mpr-input" type="text" maxlength="100"
+                :placeholder="'e.g. ' + m.dupPlaceholder()" x-model="m.dup.name" @keydown.enter="m.duplicate()">
+              <div class="mpr-hint mpr-hint-warn" x-show="m.dupHint()" x-text="m.dupHint()"></div>
+              <span class="mpr-hint">
+                The new preset is an exact copy of the chosen one. Scope selections (projects, agent profiles)
+                and chat choices are not copied.
+              </span>
+            </div>
+
+            <label class="mpr-check">
+              <input type="checkbox" x-model="m.dup.openAfter">
+              <span>Open the new preset in the native editor when done</span>
+            </label>
+
+            <div class="mpr-actions">
+              <button type="button" class="button confirm" :disabled="!m.canDuplicate()" @click="m.duplicate()">
+                <x-icon name="content_copy"></x-icon>
+                <span x-text="m.dup.busy ? 'Duplicating…' : 'Duplicate preset'"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div class="mpr-panel" x-show="m.tab === 'history'" style="display: none;">
+          <p class="mpr-muted" x-show="m.history.loading">Loading history…</p>
+          <p class="mpr-muted" x-show="!m.history.loading &amp;&amp; m.history.items.length === 0">
+            No backups yet. One is created automatically before every copy or duplicate, so you can undo it here.
+          </p>
+
+          <template x-for="b in m.history.items" :key="b.id">
+            <div class="mpr-card">
+              <div class="mpr-card-head">
+                <span>
+                  <span class="mpr-label mpr-label-inline" x-text="m.kindLabel(b)"></span>
+                  <span class="mpr-muted" x-text="m.formatDate(b.created_at)"></span>
+                </span>
+                <span class="mpr-badge" x-show="b.undone">restored</span>
+              </div>
+              <p class="mpr-hint" x-text="m.describe(b)"></p>
+              <template x-for="c in b.changes" :key="c.preset">
+                <div class="mpr-change" :class="{ 'mpr-change-done': c.restored }">
+                  <span x-text="c.preset"></span>
+                  <span class="mpr-muted" x-show="c.created">(created)</span>
+                  <span class="mpr-badge" x-show="c.restored &amp;&amp; !b.undone">restored</span>
+                </div>
+              </template>
+              <div class="mpr-actions mpr-actions-row">
+                <button type="button" class="button cancel" :disabled="m.history.busy" @click="m.deleteBackup(b)">
+                  <x-icon name="delete"></x-icon> Delete
+                </button>
+                <button type="button" class="button confirm" :disabled="m.history.busy || b.undone" @click="m.undo(b)">
+                  <x-icon name="undo"></x-icon> Undo
+                </button>
+              </div>
+            </div>
+          </template>
+
+          <div x-show="m.history.items.length > 0">
+            <p class="mpr-hint">
+              The last <span x-text="m.history.max"></span> backups are kept. They hold the previous definition of the
+              presets, including API base and extra parameters, on the server (usr/multi_preset_manager/backups).
+              <button type="button" class="mpr-link" @click="m.deleteAllBackups()">Delete all backups</button>
+            </p>
+          </div>
+        </div>
+      </div>
+    </template>
+  </div>
+  <style>
+    .mpr-tabs { display: flex; gap: var(--spacing-sm); margin: var(--spacing-md); flex-wrap: wrap; }
+    .mpr-panel { margin: var(--spacing-md); }
+    .mpr-field { margin-bottom: var(--spacing-md); }
+    .mpr-label { display: block; font-weight: 600; margin-bottom: 0.35em; }
+    .mpr-input {
+      width: 100%; box-sizing: border-box; padding: 0.5em 0.6em; min-width: 0;
+      border: 1px solid var(--color-border); border-radius: 0.4em;
+      background: var(--color-background); color: var(--color-text);
+    }
+    .mpr-row-inline { display: flex; gap: var(--spacing-sm); align-items: center; flex-wrap: wrap; }
+    .mpr-row-inline .mpr-input { flex: 1 1 12em; width: auto; }
+    .mpr-muted, .mpr-hint { color: var(--color-text-muted); font-size: 0.9em; }
+    .mpr-hint { display: block; margin-top: 0.25em; }
+    .mpr-hint-warn { color: var(--color-warning, #f59e0b); }
+    .mpr-check { display: flex; gap: 0.6em; align-items: flex-start; margin: 0.4em 0; cursor: pointer; }
+    .mpr-check input { margin-top: 0.25em; }
+    .mpr-actions { margin-top: var(--spacing-md); display: flex; justify-content: flex-end; }
+    .mpr-card { border: 1px solid var(--color-border); border-radius: 0.5em; padding: 0.8em 1em; margin-bottom: var(--spacing-md); background: var(--color-panel); }
+    .mpr-card-head { display: flex; justify-content: space-between; align-items: center; gap: 0.6em; margin-bottom: 0.3em; }
+    .mpr-label-inline { display: inline; margin: 0; }
+    .mpr-check-tight { margin: 0.2em 0; }
+    .mpr-modes { display: flex; gap: 1.5em; flex-wrap: wrap; margin-top: 0.3em; }
+    .mpr-badge { font-size: 0.8em; padding: 0.05em 0.6em; border: 1px solid var(--color-border); border-radius: 1em; color: var(--color-text-muted); }
+    .mpr-links { display: flex; gap: 0.8em; }
+    .mpr-change { display: flex; gap: 0.5em; align-items: baseline; flex-wrap: wrap; padding: 0.15em 0; }
+    .mpr-change-done { opacity: 0.6; }
+    .mpr-actions-row { gap: 0.6em; margin-top: 0.6em; }
+    .mpr-preview { margin-top: var(--spacing-md); }
+    .mpr-block { border-top: 1px solid var(--color-border); padding-top: 0.5em; margin-top: 0.5em; }
+    .mpr-slot { margin-top: 0.4em; }
+    .mpr-diff { display: flex; gap: 0.5em; align-items: baseline; flex-wrap: wrap; padding: 0.1em 0; }
+    .mpr-val { font-family: var(--font-family-code, monospace); font-size: 0.9em; }
+    .mpr-val-new { font-weight: 600; }
+
+    /* long names and values wrap instead of pushing the layout wider than the screen */
+    .mpr-check > span, .mpr-change > span, .mpr-diff > * { min-width: 0; overflow-wrap: anywhere; }
+    .mpr-hint, .mpr-val { overflow-wrap: anywhere; }
+    .mpr-card-head, .mpr-actions { flex-wrap: wrap; }
+
+    @media (max-width: 520px) {
+      .mpr-tabs { flex-wrap: nowrap; gap: var(--spacing-xs); margin: var(--spacing-xs) 0 var(--spacing-sm); }
+      .mpr-tabs .button { flex: 1 1 0; min-width: 0; padding: 0.45em 0.4em; font-size: 0.85em; white-space: nowrap; justify-content: center; }
+      .mpr-panel { margin: var(--spacing-xs) 0; }
+      .mpr-card { padding: 0.6em 0.7em; }
+      .mpr-actions .button { flex: 1 1 auto; justify-content: center; }
+    }
+    @media (max-width: 380px) {
+      .mpr-tabs x-icon { display: none; }
+    }
+    .mpr-link { background: none; border: none; padding: 0; color: var(--color-primary, #3b82f6); cursor: pointer; font-size: 0.9em; }
+  </style>
+</body>
+</html>

@@ -1,0 +1,12 @@
+<!-- Multi-Preset Manager -->
+<div x-data>
+  <button
+    x-move-after=".quick-actions-dropdown .dropdown-header + .dropdown-item"
+    class="dropdown-item"
+    id="multi-preset-manager-dropdown"
+    title="Multi-Preset Manager"
+    @click="openModal('/plugins/multi_preset_manager/webui/main.html'); dropdownOpen = false">
+    <x-icon name="tune"></x-icon>
+    <span>Multi-Preset Manager</span>
+  </button>
+</div>

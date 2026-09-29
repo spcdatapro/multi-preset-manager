@@ -1,0 +1,7 @@
+name: multi_preset_manager
+title: Multi-Preset Manager
+description: Duplicate model presets and copy chosen settings from one preset to many.
+version: 0.1.0
+settings_sections: []
+per_project_config: false
+per_agent_config: false
